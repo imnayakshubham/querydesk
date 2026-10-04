@@ -2,19 +2,31 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import {
-  checkRulesChange,
   commitMessage,
+  findRulesChangeProblem,
+  formatRule,
   isAllowedPath,
+  isClaimId,
+  isRuleId,
+  isSessionId,
   parseRule,
 } from "./rules.ts"
 
-const rules = readFileSync("RULES.md", "utf8")
-const newRule =
+const startingRulesText = readFileSync("RULES.md", "utf8")
+const proposedRuleLine =
   "- [R-005] Insurer: Suraksha General | When: dengue with ICU stay | Require: signed ICU justification note from the treating doctor | Source: CLM-001 query"
-const lastRule = rules.split("\n").findLast((line) => parseRule(line))!
+const lastStartingRuleLine = startingRulesText
+  .split("\n")
+  .findLast((line) => parseRule(line))!
+const sectionARuleLine =
+  "- Never contact an insurer, submit a claim, or send a reply. The desk does that."
 
-function addLineAfter(text: string, existingLine: string, line: string) {
-  return text.replace(existingLine, `${existingLine}\n${line}`)
+function insertLineAfter(text: string, existingLine: string, newLine: string) {
+  return text.replace(existingLine, `${existingLine}\n${newLine}`)
+}
+
+function rulesWithAddedLine(newLine: string) {
+  return insertLineAfter(startingRulesText, lastStartingRuleLine, newLine)
 }
 
 test("commitMessage prefixes the actor", () => {
@@ -29,15 +41,14 @@ test("commitMessage prefixes the actor", () => {
 })
 
 test("parseRule reads every starting rule", () => {
-  const parsed = rules
+  const startingRuleIds = startingRulesText
     .split("\n")
     .map(parseRule)
     .filter((rule) => rule !== null)
-  assert.deepEqual(
-    parsed.map((rule) => rule.id),
-    ["R-001", "R-002", "R-003", "R-004"]
-  )
-  assert.deepEqual(parseRule(newRule), {
+    .map((rule) => rule.id)
+  assert.deepEqual(startingRuleIds, ["R-001", "R-002", "R-003", "R-004"])
+
+  assert.deepEqual(parseRule(proposedRuleLine), {
     id: "R-005",
     insurer: "Suraksha General",
     when: "dengue with ICU stay",
@@ -58,71 +69,77 @@ test("parseRule rejects lines not in the rule format", () => {
   assert.equal(parseRule("Never contact an insurer."), null)
 })
 
+test("formatRule writes back the line parseRule read", () => {
+  assert.equal(formatRule(parseRule(proposedRuleLine)!), proposedRuleLine)
+})
+
+test("ID checks accept only the exact formats", () => {
+  assert.equal(isClaimId("CLM-001"), true)
+  assert.equal(isClaimId("../CLM-001"), false)
+  assert.equal(isSessionId("6b714f93"), true)
+  assert.equal(isSessionId("6b714f93/../main"), false)
+  assert.equal(isRuleId("R-005"), true)
+  assert.equal(isRuleId("R-5"), false)
+})
+
 test("isAllowedPath allows only the agent's folders and RULES.md", () => {
-  for (const path of [
+  const allowedPaths = [
     "claims/CLM-001/checklist.json",
     "lessons/R-005.json",
     "memory/MEMORY.md",
     "RULES.md",
-  ]) {
-    assert.equal(isAllowedPath(path), true, path)
-  }
-  for (const path of [
+  ]
+  const protectedPaths = [
     "src/app/page.tsx",
     "agent.yaml",
     "SOUL.md",
     ".gitignore",
     "skills/packet-check/SKILL.md",
-  ]) {
+  ]
+  for (const path of allowedPaths) assert.equal(isAllowedPath(path), true, path)
+  for (const path of protectedPaths) {
     assert.equal(isAllowedPath(path), false, path)
   }
 })
 
-test("checkRulesChange accepts no change and one new Section B rule", () => {
-  assert.equal(checkRulesChange(rules, rules), null)
+test("findRulesChangeProblem accepts no change and one new Section B rule", () => {
   assert.equal(
-    checkRulesChange(rules, addLineAfter(rules, lastRule, newRule)),
+    findRulesChangeProblem(startingRulesText, startingRulesText),
+    null
+  )
+  assert.equal(
+    findRulesChangeProblem(
+      startingRulesText,
+      rulesWithAddedLine(proposedRuleLine)
+    ),
     null
   )
 })
 
-test("checkRulesChange rejects anything else", () => {
-  const sectionALine =
-    "- Never contact an insurer, submit a claim, or send a reply. The desk does that."
-  assert.match(
-    checkRulesChange(
-      rules,
-      rules.replace(sectionALine, "- Contact the insurer.")
-    )!,
-    /exactly one added line/
+test("findRulesChangeProblem rejects anything else", () => {
+  const editedSectionA = startingRulesText.replace(
+    sectionARuleLine,
+    "- Contact the insurer."
   )
-  assert.match(
-    checkRulesChange(rules, addLineAfter(rules, sectionALine, newRule))!,
-    /Section B/
+  const ruleAddedToSectionA = insertLineAfter(
+    startingRulesText,
+    sectionARuleLine,
+    proposedRuleLine
   )
-  assert.match(
-    checkRulesChange(
-      rules,
-      addLineAfter(
-        rules,
-        lastRule,
-        `${newRule}\n${newRule.replace("R-005", "R-006")}`
-      )
-    )!,
-    /exactly one added line/
+  const twoRulesAdded = rulesWithAddedLine(
+    `${proposedRuleLine}\n${proposedRuleLine.replace("R-005", "R-006")}`
   )
-  assert.match(
-    checkRulesChange(
-      rules,
-      addLineAfter(rules, lastRule, "- ICU notes are needed.")
-    )!,
-    /rule format/
+  const malformedRuleAdded = rulesWithAddedLine("- ICU notes are needed.")
+  const reusedRuleIdAdded = rulesWithAddedLine(
+    proposedRuleLine.replace("R-005", "R-004")
   )
-  assert.match(
-    checkRulesChange(
-      rules,
-      addLineAfter(rules, lastRule, newRule.replace("R-005", "R-004"))
-    )!,
-    /already exists/
-  )
+
+  const problemWith = (branchText: string) =>
+    findRulesChangeProblem(startingRulesText, branchText)!
+
+  assert.match(problemWith(editedSectionA), /exactly one added line/)
+  assert.match(problemWith(ruleAddedToSectionA), /Section B/)
+  assert.match(problemWith(twoRulesAdded), /exactly one added line/)
+  assert.match(problemWith(malformedRuleAdded), /rule format/)
+  assert.match(problemWith(reusedRuleIdAdded), /already exists/)
 })

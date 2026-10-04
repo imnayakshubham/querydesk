@@ -6,53 +6,76 @@ export type Rule = {
   source: string
 }
 
-const RULE_LINE =
+const RULE_LINE_PATTERN =
   /^- \[(R-\d{3})\] Insurer: (.+?) \| When: (.+?) \| Require: (.+?) \| Source: (.+)$/
 
-export function commitMessage(actor: "desk" | "system", text: string) {
+export const isClaimId = (id: string) => /^CLM-\d{3}$/.test(id)
+export const isSessionId = (id: string) => /^[0-9a-f]{8}$/.test(id)
+export const isRuleId = (id: string) => /^R-\d{3}$/.test(id)
+
+export function sessionBranchName(sessionId: string) {
+  if (!isSessionId(sessionId)) throw new Error(`Unknown session ${sessionId}.`)
+  return `gitagent/session-${sessionId}`
+}
+
+export function commitMessage(
+  actor: "agent" | "desk" | "system",
+  text: string
+) {
   return `${actor}: ${text}`
 }
 
 export function parseRule(line: string): Rule | null {
-  const match = line.match(RULE_LINE)
+  const match = line.match(RULE_LINE_PATTERN)
   if (!match) return null
   const [, id, insurer, when, require, source] = match
   return { id, insurer, when, require, source }
 }
 
+export function formatRule(rule: Rule) {
+  return `- [${rule.id}] Insurer: ${rule.insurer} | When: ${rule.when} | Require: ${rule.require} | Source: ${rule.source}`
+}
+
 export function isAllowedPath(path: string) {
+  const agentFolders = ["claims/", "lessons/", "memory/"]
   return (
-    ["claims/", "lessons/", "memory/"].some((folder) =>
-      path.startsWith(folder)
-    ) || path === "RULES.md"
+    agentFolders.some((folder) => path.startsWith(folder)) ||
+    path === "RULES.md"
   )
 }
 
-// Returns why the change is not allowed, or null if it is.
-export function checkRulesChange(mainText: string, branchText: string) {
+// Returns why the change to RULES.md is not allowed, or null if it is.
+export function findRulesChangeProblem(mainText: string, branchText: string) {
   if (mainText === branchText) return null
 
-  const before = mainText.split("\n")
-  const after = branchText.split("\n")
-  if (after.length !== before.length + 1) {
+  const mainLines = mainText.split("\n")
+  const branchLines = branchText.split("\n")
+  if (branchLines.length !== mainLines.length + 1) {
     return "RULES.md must change by exactly one added line."
   }
 
-  const firstDifference = before.findIndex(
-    (line, index) => line !== after[index]
+  const firstChangedIndex = mainLines.findIndex(
+    (line, index) => line !== branchLines[index]
   )
-  const added = firstDifference === -1 ? before.length : firstDifference
-  if (after.slice(added + 1).join("\n") !== before.slice(added).join("\n")) {
+  const addedLineIndex =
+    firstChangedIndex === -1 ? mainLines.length : firstChangedIndex
+  const linesAfterAddedOnBranch = branchLines.slice(addedLineIndex + 1)
+  const linesAfterAddedOnMain = mainLines.slice(addedLineIndex)
+  if (linesAfterAddedOnBranch.join("\n") !== linesAfterAddedOnMain.join("\n")) {
     return "RULES.md must change by exactly one added line."
   }
 
-  const sectionB = before.findIndex((line) => line.startsWith("## Section B"))
-  if (added <= sectionB) return "The new rule must be in Section B."
+  const sectionBHeadingIndex = mainLines.findIndex((line) =>
+    line.startsWith("## Section B")
+  )
+  if (addedLineIndex <= sectionBHeadingIndex) {
+    return "The new rule must be in Section B."
+  }
 
-  const rule = parseRule(after[added])
-  if (!rule) return "The new rule is not in the rule format."
-  if (before.some((line) => parseRule(line)?.id === rule.id)) {
-    return `Rule ${rule.id} already exists.`
+  const addedRule = parseRule(branchLines[addedLineIndex])
+  if (!addedRule) return "The new rule is not in the rule format."
+  if (mainLines.some((line) => parseRule(line)?.id === addedRule.id)) {
+    return `Rule ${addedRule.id} already exists.`
   }
   return null
 }
