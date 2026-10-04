@@ -1,6 +1,11 @@
-import { readFile, readSessionProposal, writeFile } from "@/lib/github"
-import { respondWithJson } from "@/lib/respond"
-import { commitMessage, formatRule, sessionBranchName } from "@/lib/rules"
+import {
+  commitFile,
+  commitFileDeletion,
+  readAgentProposal,
+  readRepoFile,
+} from "@/lib/github"
+import { respondWithResultOrError } from "@/lib/respond"
+import { buildCommitMessage, formatRuleLine, agentBranchFor } from "@/lib/rules"
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -15,7 +20,7 @@ function isValidRuleField(text: unknown): text is string {
 
 export async function POST(request: Request, { params }: RouteParams) {
   const { id: sessionId } = await params
-  return respondWithJson(async () => {
+  return respondWithResultOrError(async () => {
     const { when, require } = await request.json()
     if (!isValidRuleField(when) || !isValidRuleField(require)) {
       throw new Error(
@@ -23,30 +28,31 @@ export async function POST(request: Request, { params }: RouteParams) {
       )
     }
 
-    const branch = sessionBranchName(sessionId)
-    const { proposedRule } = await readSessionProposal(branch)
-    if (!proposedRule) throw new Error("This session has no proposed rule.")
+    const branch = agentBranchFor(sessionId)
+    const { proposedRule } = await readAgentProposal(branch)
+    if (!proposedRule) {
+      throw new Error("This agent branch has no proposed rule.")
+    }
 
-    const editedRuleLine = formatRule({
+    const editedRuleLine = formatRuleLine({
       ...proposedRule,
       when: when.trim(),
       require: require.trim(),
     })
-    const branchRulesFile = await readFile("RULES.md", branch)
-    await writeFile(
+    const branchRulesFile = await readRepoFile("RULES.md", branch)
+    await commitFile(
       "RULES.md",
       branchRulesFile!.text.replace(
-        formatRule(proposedRule),
+        formatRuleLine(proposedRule),
         () => editedRuleLine
       ),
-      commitMessage("desk", `edit rule ${proposedRule.id}`),
+      buildCommitMessage("desk", `edit rule ${proposedRule.id}`),
       branch
     )
     // The preview described the old wording, so it no longer applies.
-    await writeFile(
+    await commitFileDeletion(
       `lessons/${proposedRule.id}-impact.json`,
-      null,
-      commitMessage("desk", `clear impact preview for ${proposedRule.id}`),
+      buildCommitMessage("desk", `clear impact preview for ${proposedRule.id}`),
       branch
     )
     return { rule: editedRuleLine }

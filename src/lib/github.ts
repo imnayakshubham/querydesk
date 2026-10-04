@@ -1,9 +1,9 @@
 import { Octokit } from "@octokit/rest"
 import {
-  findRulesChangeProblem,
-  isAllowedPath,
+  findRulebookChangeError,
+  isPathAgentMayChange,
   isClaimId,
-  parseRule,
+  parseRuleLine,
 } from "@/lib/rules"
 
 export type Claim = {
@@ -29,7 +29,7 @@ function httpStatusOf(error: unknown) {
   return (error as { status?: number }).status
 }
 
-export async function readFile(path: string, branch = "main") {
+export async function readRepoFile(path: string, branch = "main") {
   try {
     const { data } = await octokit.repos.getContent({
       owner,
@@ -48,11 +48,11 @@ export async function readFile(path: string, branch = "main") {
   }
 }
 
-export async function listFolderNames(path: string) {
+export async function listClaimIds() {
   const { data } = await octokit.repos.getContent({
     owner,
     repo,
-    path,
+    path: "claims",
     ref: "main",
   })
   return Array.isArray(data) ? data.map((entry) => entry.name) : []
@@ -60,14 +60,13 @@ export async function listFolderNames(path: string) {
 
 export async function readClaim(claimId: string) {
   const claimFile = isClaimId(claimId)
-    ? await readFile(`claims/${claimId}/claim.json`)
+    ? await readRepoFile(`claims/${claimId}/claim.json`)
     : null
   if (!claimFile) throw new Error(`Unknown claim ${claimId}.`)
   return JSON.parse(claimFile.text) as Claim
 }
 
-// Without a path, lists every commit on main.
-export async function listCommitsOnMain(path?: string) {
+export async function listRecentCommitsOnMain(path?: string) {
   const { data } = await octokit.repos.listCommits({
     owner,
     repo,
@@ -82,7 +81,7 @@ export async function listCommitsOnMain(path?: string) {
   }))
 }
 
-export async function listSessionBranches() {
+export async function listAgentBranches() {
   const { data } = await octokit.git.listMatchingRefs({
     owner,
     repo,
@@ -91,7 +90,7 @@ export async function listSessionBranches() {
   return data.map((branchRef) => branchRef.ref.replace("refs/heads/", ""))
 }
 
-export async function listFilesChangedFromMain(branch: string) {
+export async function listFilesChangedByAgent(branch: string) {
   const { data } = await octokit.repos.compareCommitsWithBasehead({
     owner,
     repo,
@@ -100,9 +99,9 @@ export async function listFilesChangedFromMain(branch: string) {
   return data.files ?? []
 }
 
-// What a session branch proposes: the claim it worked on, and the rule it adds, if any.
-export async function readSessionProposal(branch: string) {
-  const changedFiles = await listFilesChangedFromMain(branch)
+// What an agent branch proposes: the claim it worked on, and the rule it adds, if any.
+export async function readAgentProposal(branch: string) {
+  const changedFiles = await listFilesChangedByAgent(branch)
   const rulesDiff = changedFiles.find(
     (file) => file.filename === "RULES.md"
   )?.patch
@@ -115,40 +114,44 @@ export async function readSessionProposal(branch: string) {
   return {
     changedFiles,
     claimId,
-    proposedRule: addedRuleLine ? parseRule(addedRuleLine.slice(1)) : null,
+    proposedRule: addedRuleLine ? parseRuleLine(addedRuleLine.slice(1)) : null,
   }
 }
 
-export async function findPendingLesson() {
-  for (const branch of await listSessionBranches()) {
-    const { proposedRule } = await readSessionProposal(branch)
+export async function findRuleAwaitingReview() {
+  for (const branch of await listAgentBranches()) {
+    const { proposedRule } = await readAgentProposal(branch)
     if (proposedRule) return { branch, proposedRule }
   }
   return null
 }
 
-// Passing null as contents deletes the file.
-export async function writeFile(
+export async function commitFileDeletion(
   path: string,
-  contents: string | null,
   message: string,
   branch = "main"
 ) {
-  const existingFile = await readFile(path, branch)
-  if (contents === null) {
-    if (!existingFile) return
-    await octokit.repos.deleteFile({
-      owner,
-      repo,
-      path,
-      message,
-      branch,
-      sha: existingFile.sha,
-      committer: queryDeskIdentity,
-      author: queryDeskIdentity,
-    })
-    return
-  }
+  const existingFile = await readRepoFile(path, branch)
+  if (!existingFile) return
+  await octokit.repos.deleteFile({
+    owner,
+    repo,
+    path,
+    message,
+    branch,
+    sha: existingFile.sha,
+    committer: queryDeskIdentity,
+    author: queryDeskIdentity,
+  })
+}
+
+export async function commitFile(
+  path: string,
+  contents: string,
+  message: string,
+  branch = "main"
+) {
+  const existingFile = await readRepoFile(path, branch)
   await octokit.repos.createOrUpdateFileContents({
     owner,
     repo,
@@ -162,24 +165,24 @@ export async function writeFile(
   })
 }
 
-export async function deleteBranch(branch: string) {
+export async function discardAgentBranch(branch: string) {
   await octokit.git.deleteRef({ owner, repo, ref: `heads/${branch}` })
 }
 
-export async function mergeIntoMain(branch: string, message: string) {
-  for (const file of await listFilesChangedFromMain(branch)) {
+export async function approveAgentBranch(branch: string, message: string) {
+  for (const file of await listFilesChangedByAgent(branch)) {
     for (const path of [file.filename, file.previous_filename]) {
-      if (path && !isAllowedPath(path)) {
+      if (path && !isPathAgentMayChange(path)) {
         throw new Error(`The agent changed ${path}, which it may not change.`)
       }
     }
   }
 
   const [mainRulesFile, branchRulesFile] = await Promise.all([
-    readFile("RULES.md"),
-    readFile("RULES.md", branch),
+    readRepoFile("RULES.md"),
+    readRepoFile("RULES.md", branch),
   ])
-  const rulesChangeProblem = findRulesChangeProblem(
+  const rulesChangeProblem = findRulebookChangeError(
     mainRulesFile!.text,
     branchRulesFile!.text
   )
@@ -199,5 +202,5 @@ export async function mergeIntoMain(branch: string, message: string) {
     }
     throw error
   }
-  await deleteBranch(branch)
+  await discardAgentBranch(branch)
 }

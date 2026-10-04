@@ -1,19 +1,19 @@
-import { listCommitsOnMain, readFile, writeFile } from "@/lib/github"
-import { respondWithJson } from "@/lib/respond"
-import { commitMessage, isRuleId, parseRule } from "@/lib/rules"
+import { listRecentCommitsOnMain, readRepoFile, commitFile } from "@/lib/github"
+import { respondWithResultOrError } from "@/lib/respond"
+import { buildCommitMessage, isRuleId, parseRuleLine } from "@/lib/rules"
 
 type RouteParams = { params: Promise<{ id: string }> }
 
 export async function POST(_request: Request, { params }: RouteParams) {
   const { id: ruleId } = await params
-  return respondWithJson(async () => {
+  return respondWithResultOrError(async () => {
     if (!isRuleId(ruleId)) throw new Error(`Unknown rule ${ruleId}.`)
 
-    const rulesFile = await readFile("RULES.md")
+    const rulesFile = await readRepoFile("RULES.md")
     const ruleLine = rulesFile!.text
       .split("\n")
-      .find((line) => parseRule(line)?.id === ruleId)
-    const rule = ruleLine ? parseRule(ruleLine) : null
+      .find((line) => parseRuleLine(line)?.id === ruleId)
+    const rule = ruleLine ? parseRuleLine(ruleLine) : null
     if (!ruleLine || !rule) {
       throw new Error(`Rule ${ruleId} is not in the rulebook.`)
     }
@@ -23,17 +23,17 @@ export async function POST(_request: Request, { params }: RouteParams) {
 
     // Searched across all of main: git hides a merge commit from a
     // path-filtered history when main itself didn't touch the file.
-    const approvalCommit = (await listCommitsOnMain()).find((commit) =>
+    const approvalCommit = (await listRecentCommitsOnMain()).find((commit) =>
       commit.message.startsWith(`desk: approve rule ${ruleId}`)
     )
     const undoesNote = approvalCommit
       ? ` (undoes ${approvalCommit.sha.slice(0, 7)})`
       : ""
 
-    await writeFile(
+    await commitFile(
       "RULES.md",
       rulesFile!.text.replace(`${ruleLine}\n`, ""),
-      commitMessage("desk", `revert rule ${ruleId}${undoesNote}`)
+      buildCommitMessage("desk", `revert rule ${ruleId}${undoesNote}`)
     )
     return { reverted: ruleId }
   })

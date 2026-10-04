@@ -3,12 +3,12 @@ import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { initLocalSession, query } from "@open-gitagent/gitagent"
-import { deleteBranch, listFilesChangedFromMain } from "@/lib/github"
+import { discardAgentBranch, listFilesChangedByAgent } from "@/lib/github"
 
 const githubToken = process.env.GITHUB_TOKEN!
 const MODEL_BUSY_OR_OUT_OF_QUOTA = /"code":\s*(429|503)/
 
-async function runAgentOnce(prompt: string, cloneDir: string) {
+async function runAgentInClone(prompt: string, cloneDir: string) {
   let modelError = ""
   let finalReply = ""
   const agentRun = query({
@@ -32,7 +32,7 @@ async function runAgentOnce(prompt: string, cloneDir: string) {
   return { modelError, finalReply }
 }
 
-function toReadableModelError(modelError: string) {
+function describeModelError(modelError: string) {
   const statusCode = modelError.match(MODEL_BUSY_OR_OUT_OF_QUOTA)?.[1]
   if (statusCode === "429") return "Demo agent limit reached. Try again later."
   if (statusCode === "503") return "The model is busy. Try again in a minute."
@@ -40,7 +40,7 @@ function toReadableModelError(modelError: string) {
 }
 
 // Runs one GitAgent session and pushes its branch only if the agent succeeded.
-export async function runAgent(prompt: string, branchToResume?: string) {
+export async function runAgentSkill(prompt: string, branchToResume?: string) {
   const cloneDir = join(tmpdir(), `querydesk-${randomUUID()}`)
   try {
     const session = initLocalSession({
@@ -50,20 +50,20 @@ export async function runAgent(prompt: string, branchToResume?: string) {
       session: branchToResume,
     })
 
-    let agentResult = await runAgentOnce(prompt, session.dir)
+    let agentResult = await runAgentInClone(prompt, session.dir)
     if (MODEL_BUSY_OR_OUT_OF_QUOTA.test(agentResult.modelError)) {
-      agentResult = await runAgentOnce(prompt, session.dir)
+      agentResult = await runAgentInClone(prompt, session.dir)
     }
     if (agentResult.modelError) {
-      throw new Error(toReadableModelError(agentResult.modelError))
+      throw new Error(describeModelError(agentResult.modelError))
     }
 
     session.finalize()
     const agentChangedNothing =
       !branchToResume &&
-      (await listFilesChangedFromMain(session.branch)).length === 0
+      (await listFilesChangedByAgent(session.branch)).length === 0
     if (agentChangedNothing) {
-      await deleteBranch(session.branch)
+      await discardAgentBranch(session.branch)
       throw new Error(agentResult.finalReply || "The agent made no changes.")
     }
     return { branch: session.branch, agentReply: agentResult.finalReply }

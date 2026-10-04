@@ -1,4 +1,6 @@
-export async function respondWithJson(handleRequest: () => Promise<object>) {
+export async function respondWithResultOrError(
+  handleRequest: () => Promise<object>
+) {
   try {
     return Response.json(await handleRequest())
   } catch (error) {

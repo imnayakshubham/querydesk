@@ -13,30 +13,30 @@ export const isClaimId = (id: string) => /^CLM-\d{3}$/.test(id)
 export const isSessionId = (id: string) => /^[0-9a-f]{8}$/.test(id)
 export const isRuleId = (id: string) => /^R-\d{3}$/.test(id)
 
-export function sessionBranchName(sessionId: string) {
+export function agentBranchFor(sessionId: string) {
   if (!isSessionId(sessionId)) throw new Error(`Unknown session ${sessionId}.`)
   return `gitagent/session-${sessionId}`
 }
 
-export function commitMessage(
+export function buildCommitMessage(
   actor: "agent" | "desk" | "system",
   text: string
 ) {
   return `${actor}: ${text}`
 }
 
-export function parseRule(line: string): Rule | null {
+export function parseRuleLine(line: string): Rule | null {
   const match = line.match(RULE_LINE_PATTERN)
   if (!match) return null
   const [, id, insurer, when, require, source] = match
   return { id, insurer, when, require, source }
 }
 
-export function formatRule(rule: Rule) {
+export function formatRuleLine(rule: Rule) {
   return `- [${rule.id}] Insurer: ${rule.insurer} | When: ${rule.when} | Require: ${rule.require} | Source: ${rule.source}`
 }
 
-export function isAllowedPath(path: string) {
+export function isPathAgentMayChange(path: string) {
   const agentFolders = ["claims/", "lessons/", "memory/"]
   return (
     agentFolders.some((folder) => path.startsWith(folder)) ||
@@ -45,7 +45,7 @@ export function isAllowedPath(path: string) {
 }
 
 // Returns why the change to RULES.md is not allowed, or null if it is.
-export function findRulesChangeProblem(mainText: string, branchText: string) {
+export function findRulebookChangeError(mainText: string, branchText: string) {
   if (mainText === branchText) return null
 
   const mainLines = mainText.split("\n")
@@ -72,9 +72,9 @@ export function findRulesChangeProblem(mainText: string, branchText: string) {
     return "The new rule must be in Section B."
   }
 
-  const addedRule = parseRule(branchLines[addedLineIndex])
+  const addedRule = parseRuleLine(branchLines[addedLineIndex])
   if (!addedRule) return "The new rule is not in the rule format."
-  if (mainLines.some((line) => parseRule(line)?.id === addedRule.id)) {
+  if (mainLines.some((line) => parseRuleLine(line)?.id === addedRule.id)) {
     return `Rule ${addedRule.id} already exists.`
   }
   return null

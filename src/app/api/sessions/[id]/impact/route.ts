@@ -1,29 +1,34 @@
-import { runAgent } from "@/lib/agent"
+import { runAgentSkill } from "@/lib/agent"
 import {
-  listFolderNames,
+  listClaimIds,
   readClaim,
-  readFile,
-  readSessionProposal,
+  readRepoFile,
+  readAgentProposal,
 } from "@/lib/github"
-import { respondWithJson } from "@/lib/respond"
-import { sessionBranchName } from "@/lib/rules"
+import { respondWithResultOrError } from "@/lib/respond"
+import { agentBranchFor } from "@/lib/rules"
 
 type RouteParams = { params: Promise<{ id: string }> }
 
 export async function POST(_request: Request, { params }: RouteParams) {
   const { id: sessionId } = await params
-  return respondWithJson(async () => {
-    const branch = sessionBranchName(sessionId)
-    const { proposedRule } = await readSessionProposal(branch)
-    if (!proposedRule) throw new Error("This session has no proposed rule.")
+  return respondWithResultOrError(async () => {
+    const branch = agentBranchFor(sessionId)
+    const { proposedRule } = await readAgentProposal(branch)
+    if (!proposedRule) {
+      throw new Error("This agent branch has no proposed rule.")
+    }
 
-    const lessonFile = await readFile(`lessons/${proposedRule.id}.json`, branch)
+    const lessonFile = await readRepoFile(
+      `lessons/${proposedRule.id}.json`,
+      branch
+    )
     if (!lessonFile) {
       throw new Error(`The lesson file for ${proposedRule.id} is missing.`)
     }
     const { sourceClaim } = JSON.parse(lessonFile.text)
 
-    const otherClaimIds = (await listFolderNames("claims")).filter(
+    const otherClaimIds = (await listClaimIds()).filter(
       (claimId) => claimId !== sourceClaim
     )
     const otherClaims = await Promise.all(otherClaimIds.map(readClaim))
@@ -38,7 +43,7 @@ export async function POST(_request: Request, { params }: RouteParams) {
       throw new Error(`No other open claims for ${proposedRule.insurer}.`)
     }
 
-    await runAgent(
+    await runAgentSkill(
       `Use the impact-preview skill for claims ${claimIdsToPreview.join(", ")}.`,
       branch
     )
