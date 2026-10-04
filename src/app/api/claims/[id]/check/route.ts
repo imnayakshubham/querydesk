@@ -1,5 +1,5 @@
 import { runAgentSkill } from "@/lib/agent"
-import { approveAgentBranch, readClaim } from "@/lib/github"
+import { mergeAgentBranch, readClaim } from "@/lib/github"
 import { respondWithResultOrError } from "@/lib/respond"
 import { buildCommitMessage } from "@/lib/rules"
 
@@ -13,7 +13,7 @@ export async function POST(_request: Request, { params }: RouteParams) {
       `Use the packet-check skill for claim ${claimId}.`
     )
     // A check is analysis, not a proposal, so it goes straight to main.
-    await approveAgentBranch(
+    await mergeAgentBranch(
       branch,
       buildCommitMessage("agent", `check claim ${claimId}`)
     )

@@ -5,8 +5,8 @@ description: Show which open claims a proposed playbook rule would flag, before 
 
 # Impact preview
 
-**Input:** the request names the claims to check, for example `CLM-002 and CLM-003`. The proposed rule is the last line of Section B in `RULES.md`.
-**Output:** `lessons/<rule>-impact.json`, for example `lessons/R-011-impact.json`. No other file changes.
+**Input:** the request names the claims to check, for example `CLM-902, CLM-903`. The proposed rule is the last line of Section B in `RULES.md`.
+**Output:** `lessons/<rule>-impact.json`, for example `lessons/R-042-impact.json`. No other file changes.
 
 ## Steps
 
@@ -18,12 +18,12 @@ description: Show which open claims a proposed playbook rule would flag, before 
 
 ## Format
 
-Valid JSON only, no comments. One entry per claim, in the order named.
+Valid JSON only, no comments. One entry per claim, in the order named. The example below is fictional, only to show the shape.
 
 ```json
 [
-  { "claim": "CLM-002", "flagged": true, "reason": "Dengue with a 3-day ICU stay; no signed ICU justification note in the documents." },
-  { "claim": "CLM-003", "flagged": false, "reason": "Appendectomy with no ICU stay; the rule does not apply." }
+  { "claim": "CLM-902", "flagged": true, "reason": "Cataract surgery; no biometry report in the documents." },
+  { "claim": "CLM-903", "flagged": false, "reason": "Knee replacement, not cataract surgery; the rule does not apply." }
 ]
 ```
 

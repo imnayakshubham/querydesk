@@ -25,14 +25,14 @@ description: Draft the desk's reply to the insurer's latest query on one claim, 
 
 ## Format
 
-Valid JSON only, no comments.
+Valid JSON only, no comments. The example below is fictional, only to show the shape.
 
 ```json
 {
-  "query": "The patient stayed in the ICU for 2 days. Please send a justification for the ICU admission.",
-  "reply": "Dear Suraksha General claims team, ... Insurance desk",
+  "query": "Please send the biometry report for the cataract surgery.",
+  "reply": "Dear Example Health claims team, ... Insurance desk",
   "attach": [
-    { "document": "signed ICU justification note from the treating doctor", "present": false }
+    { "document": "biometry report", "present": false }
   ],
   "rules": []
 }

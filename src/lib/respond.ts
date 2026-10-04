@@ -1,3 +1,5 @@
+import { DeskError } from "@/lib/desk-error"
+
 export async function respondWithResultOrError(
   handleRequest: () => Promise<object>
 ) {
@@ -5,6 +7,7 @@ export async function respondWithResultOrError(
     return Response.json(await handleRequest())
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return Response.json({ error: message }, { status: 400 })
+    const status = error instanceof DeskError ? 400 : 500
+    return Response.json({ error: message }, { status })
   }
 }

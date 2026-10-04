@@ -5,67 +5,67 @@ import {
   buildCommitMessage,
   findRulebookChangeError,
   formatRuleLine,
-  isPathAgentMayChange,
   isClaimId,
+  isLearnedRule,
+  isPathAgentMayChange,
   isRuleId,
   isSessionId,
   parseRuleLine,
+  parseRulebook,
+  ruleApprovalMessage,
+  sessionIdOf,
+  agentBranchFor,
 } from "./rules.ts"
 
-const startingRulesText = readFileSync("RULES.md", "utf8")
-const proposedRuleLine =
-  "- [R-011] Insurer: Suraksha General | When: dengue with ICU stay | Require: signed ICU justification note from the treating doctor | Source: CLM-001 query"
-const lastStartingRuleLine = startingRulesText
-  .split("\n")
-  .findLast((line) => parseRuleLine(line))!
-const sectionARuleLine =
-  "- Never contact an insurer, submit a claim, or send a reply. The desk does that."
+// Fixtures come from the real rulebook, so adding a rule needs no test change.
+const rulebookText = readFileSync("RULES.md", "utf8")
+const rulebookLines = rulebookText.split("\n")
+const startingRules = parseRulebook(rulebookText)
+const lastRuleLine = rulebookLines.findLast((line) => parseRuleLine(line))!
+const sectionARuleLine = rulebookLines
+  .slice(rulebookLines.findIndex((line) => line.startsWith("## Section A")))
+  .find((line) => line.startsWith("- "))!
+
+const ruleIdAfter = (ruleId: string) =>
+  `R-${String(Number(ruleId.slice(2)) + 1).padStart(3, "0")}`
+const nextRuleId = ruleIdAfter(startingRules.at(-1)!.id)
+
+// Fictional, so the tests never encode the demo's expected rule.
+const proposedRuleLine = `- [${nextRuleId}] Insurer: Any | When: cataract surgery | Require: biometry report | Source: test query`
 
 function insertLineAfter(text: string, existingLine: string, newLine: string) {
   return text.replace(existingLine, `${existingLine}\n${newLine}`)
 }
 
-function rulesWithAddedLine(newLine: string) {
-  return insertLineAfter(startingRulesText, lastStartingRuleLine, newLine)
+function rulebookWithAddedLine(newLine: string) {
+  return insertLineAfter(rulebookText, lastRuleLine, newLine)
 }
 
-test("buildCommitMessage prefixes the actor", () => {
-  assert.equal(
-    buildCommitMessage("desk", "approve rule R-011"),
-    "desk: approve rule R-011"
+test("every rule-looking line in RULES.md parses", () => {
+  const ruleLookingLines = rulebookLines.filter((line) =>
+    line.startsWith("- [")
   )
-  assert.equal(
-    buildCommitMessage("system", "insurer query received for CLM-001"),
-    "system: insurer query received for CLM-001"
-  )
+  assert.equal(startingRules.length, ruleLookingLines.length)
 })
 
-test("parseRuleLine reads every starting rule", () => {
-  const startingRuleIds = startingRulesText
-    .split("\n")
-    .map(parseRuleLine)
-    .filter((rule) => rule !== null)
-    .map((rule) => rule.id)
-  assert.deepEqual(startingRuleIds, [
-    "R-001",
-    "R-002",
-    "R-003",
-    "R-004",
-    "R-005",
-    "R-006",
-    "R-007",
-    "R-008",
-    "R-009",
-    "R-010",
-  ])
-
-  assert.deepEqual(parseRuleLine(proposedRuleLine), {
-    id: "R-011",
-    insurer: "Suraksha General",
-    when: "dengue with ICU stay",
-    require: "signed ICU justification note from the treating doctor",
-    source: "CLM-001 query",
+test("starting rules are numbered R-001 upwards with no gaps or repeats", () => {
+  startingRules.forEach((rule, index) => {
+    assert.equal(rule.id, `R-${String(index + 1).padStart(3, "0")}`)
+    assert.equal(isLearnedRule(rule), false, rule.id)
   })
+})
+
+test("parseRuleLine and formatRuleLine round-trip a rule", () => {
+  const rule = parseRuleLine(proposedRuleLine)!
+  assert.deepEqual(rule, {
+    id: nextRuleId,
+    insurer: "Any",
+    when: "cataract surgery",
+    require: "biometry report",
+    source: "test query",
+  })
+  assert.equal(formatRuleLine(rule), proposedRuleLine)
+  assert.equal(isLearnedRule(rule), true)
 })
 
 test("parseRuleLine rejects lines not in the rule format", () => {
@@ -74,17 +74,18 @@ test("parseRuleLine rejects lines not in the rule format", () => {
     null
   )
   assert.equal(
-    parseRuleLine("- [R-011] Insurer: Any | Require: y | Source: z"),
+    parseRuleLine("- [R-001] Insurer: Any | Require: y | Source: z"),
     null
   )
-  assert.equal(parseRuleLine("Never contact an insurer."), null)
+  assert.equal(parseRuleLine(sectionARuleLine), null)
 })
 
-test("formatRuleLine writes back the line parseRuleLine read", () => {
+test("commit messages name the actor", () => {
   assert.equal(
-    formatRuleLine(parseRuleLine(proposedRuleLine)!),
-    proposedRuleLine
+    buildCommitMessage("system", "insurer query received for CLM-001"),
+    "system: insurer query received for CLM-001"
   )
+  assert.equal(ruleApprovalMessage("R-001"), "desk: approve rule R-001")
 })
 
 test("ID checks accept only the exact formats", () => {
@@ -92,14 +93,15 @@ test("ID checks accept only the exact formats", () => {
   assert.equal(isClaimId("../CLM-001"), false)
   assert.equal(isSessionId("6b714f93"), true)
   assert.equal(isSessionId("6b714f93/../main"), false)
-  assert.equal(isRuleId("R-011"), true)
+  assert.equal(isRuleId("R-001"), true)
   assert.equal(isRuleId("R-5"), false)
+  assert.equal(sessionIdOf(agentBranchFor("6b714f93")), "6b714f93")
 })
 
 test("isPathAgentMayChange allows only the agent's folders and RULES.md", () => {
   const allowedPaths = [
     "claims/CLM-001/checklist.json",
-    "lessons/R-011.json",
+    "lessons/R-001.json",
     "memory/MEMORY.md",
     "RULES.md",
   ]
@@ -110,51 +112,49 @@ test("isPathAgentMayChange allows only the agent's folders and RULES.md", () => 
     ".gitignore",
     "skills/packet-check/SKILL.md",
   ]
-  for (const path of allowedPaths)
+  for (const path of allowedPaths) {
     assert.equal(isPathAgentMayChange(path), true, path)
+  }
   for (const path of protectedPaths) {
     assert.equal(isPathAgentMayChange(path), false, path)
   }
 })
 
 test("findRulebookChangeError accepts no change and one new Section B rule", () => {
-  assert.equal(
-    findRulebookChangeError(startingRulesText, startingRulesText),
-    null
-  )
+  assert.equal(findRulebookChangeError(rulebookText, rulebookText), null)
   assert.equal(
     findRulebookChangeError(
-      startingRulesText,
-      rulesWithAddedLine(proposedRuleLine)
+      rulebookText,
+      rulebookWithAddedLine(proposedRuleLine)
     ),
     null
   )
 })
 
 test("findRulebookChangeError rejects anything else", () => {
-  const editedSectionA = startingRulesText.replace(
+  const editedSectionA = rulebookText.replace(
     sectionARuleLine,
     "- Contact the insurer."
   )
   const ruleAddedToSectionA = insertLineAfter(
-    startingRulesText,
+    rulebookText,
     sectionARuleLine,
     proposedRuleLine
   )
-  const twoRulesAdded = rulesWithAddedLine(
-    `${proposedRuleLine}\n${proposedRuleLine.replace("R-011", "R-012")}`
+  const twoRulesAdded = rulebookWithAddedLine(
+    `${proposedRuleLine}\n${proposedRuleLine.replace(nextRuleId, ruleIdAfter(nextRuleId))}`
   )
-  const malformedRuleAdded = rulesWithAddedLine("- ICU notes are needed.")
-  const reusedRuleIdAdded = rulesWithAddedLine(
-    proposedRuleLine.replace("R-011", "R-010")
+  const malformedRuleAdded = rulebookWithAddedLine("- ICU notes are needed.")
+  const reusedRuleIdAdded = rulebookWithAddedLine(
+    proposedRuleLine.replace(nextRuleId, startingRules.at(-1)!.id)
   )
 
-  const problemWith = (branchText: string) =>
-    findRulebookChangeError(startingRulesText, branchText)!
+  const errorFor = (branchText: string) =>
+    findRulebookChangeError(rulebookText, branchText)!
 
-  assert.match(problemWith(editedSectionA), /exactly one added line/)
-  assert.match(problemWith(ruleAddedToSectionA), /Section B/)
-  assert.match(problemWith(twoRulesAdded), /exactly one added line/)
-  assert.match(problemWith(malformedRuleAdded), /rule format/)
-  assert.match(problemWith(reusedRuleIdAdded), /already exists/)
+  assert.match(errorFor(editedSectionA), /exactly one added line/)
+  assert.match(errorFor(ruleAddedToSectionA), /Section B/)
+  assert.match(errorFor(twoRulesAdded), /exactly one added line/)
+  assert.match(errorFor(malformedRuleAdded), /rule format/)
+  assert.match(errorFor(reusedRuleIdAdded), /already exists/)
 })

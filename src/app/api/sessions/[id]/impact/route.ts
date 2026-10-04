@@ -1,9 +1,10 @@
 import { runAgentSkill } from "@/lib/agent"
+import { DeskError } from "@/lib/desk-error"
 import {
   listClaimIds,
+  readAgentProposal,
   readClaim,
   readRepoFile,
-  readAgentProposal,
 } from "@/lib/github"
 import { respondWithResultOrError } from "@/lib/respond"
 import { agentBranchFor } from "@/lib/rules"
@@ -16,7 +17,7 @@ export async function POST(_request: Request, { params }: RouteParams) {
     const branch = agentBranchFor(sessionId)
     const { proposedRule } = await readAgentProposal(branch)
     if (!proposedRule) {
-      throw new Error("This agent branch has no proposed rule.")
+      throw new DeskError("This agent branch has no proposed rule.")
     }
 
     const lessonFile = await readRepoFile(
@@ -24,7 +25,7 @@ export async function POST(_request: Request, { params }: RouteParams) {
       branch
     )
     if (!lessonFile) {
-      throw new Error(`The lesson file for ${proposedRule.id} is missing.`)
+      throw new DeskError(`The lesson file for ${proposedRule.id} is missing.`)
     }
     const { sourceClaim } = JSON.parse(lessonFile.text)
 
@@ -40,13 +41,17 @@ export async function POST(_request: Request, { params }: RouteParams) {
       )
       .map((claim) => claim.id)
     if (claimIdsToPreview.length === 0) {
-      throw new Error(`No other open claims for ${proposedRule.insurer}.`)
+      throw new DeskError(`No other open claims for ${proposedRule.insurer}.`)
     }
 
-    await runAgentSkill(
+    const { agentReply } = await runAgentSkill(
       `Use the impact-preview skill for claims ${claimIdsToPreview.join(", ")}.`,
       branch
     )
+    const impactPath = `lessons/${proposedRule.id}-impact.json`
+    if (!(await readRepoFile(impactPath, branch))) {
+      throw new DeskError(agentReply || "The agent did not write a preview.")
+    }
     return { branch, claimIds: claimIdsToPreview }
   })
 }

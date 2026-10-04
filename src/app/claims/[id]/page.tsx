@@ -5,7 +5,7 @@ import { DocumentBadge, StatusBadge } from "@/components/badges"
 import { CommitHistory } from "@/components/commit-history"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { loadClaim, repoUrl, type Reply } from "@/lib/desk"
-import { isClaimId } from "@/lib/rules"
+import { isClaimId, sessionIdOf } from "@/lib/rules"
 
 type PageParams = { params: Promise<{ id: string }> }
 
@@ -23,11 +23,11 @@ export default async function ClaimPage({ params }: PageParams) {
     approvedReply,
     replyBranch,
     draftReply,
-    replyAnswersCurrentQuery,
+    queryIsAnswered,
     ruleAwaitingReview,
     timeline,
   } = claimView
-  const sessionId = replyBranch?.replace("gitagent/session-", "")
+  const sessionId = replyBranch && sessionIdOf(replyBranch)
 
   return (
     <>
@@ -135,14 +135,14 @@ export default async function ClaimPage({ params }: PageParams) {
               </div>
             )}
 
-            {!draftReply && replyAnswersCurrentQuery && approvedReply && (
+            {!draftReply && queryIsAnswered && approvedReply && (
               <div className="flex flex-col gap-3">
                 <p className="text-xs text-success">Approved reply</p>
                 <ReplyDetails reply={approvedReply} />
               </div>
             )}
 
-            {insurerQuery && !draftReply && !replyAnswersCurrentQuery && (
+            {insurerQuery && !draftReply && !queryIsAnswered && (
               <ActionButton
                 endpoint={`/api/claims/${claim.id}/reply`}
                 label="Draft reply"
@@ -151,7 +151,7 @@ export default async function ClaimPage({ params }: PageParams) {
               />
             )}
 
-            {replyAnswersCurrentQuery && !ruleAwaitingReview && (
+            {queryIsAnswered && !ruleAwaitingReview && (
               <ActionButton
                 endpoint={`/api/claims/${claim.id}/lesson`}
                 variant="outline"
@@ -160,7 +160,7 @@ export default async function ClaimPage({ params }: PageParams) {
                 successMessage="Rule proposed. Review it on the Rules page."
               />
             )}
-            {replyAnswersCurrentQuery && ruleAwaitingReview && (
+            {queryIsAnswered && ruleAwaitingReview && (
               <p className="text-muted-foreground">
                 A proposed rule is waiting on the Rules page.
               </p>

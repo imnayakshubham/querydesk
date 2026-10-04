@@ -1,11 +1,12 @@
+import { DeskError } from "@/lib/desk-error"
 import {
   commitFile,
   commitFileDeletion,
   readAgentProposal,
-  readRepoFile,
+  readRulebook,
 } from "@/lib/github"
 import { respondWithResultOrError } from "@/lib/respond"
-import { buildCommitMessage, formatRuleLine, agentBranchFor } from "@/lib/rules"
+import { agentBranchFor, buildCommitMessage, formatRuleLine } from "@/lib/rules"
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -23,7 +24,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   return respondWithResultOrError(async () => {
     const { when, require } = await request.json()
     if (!isValidRuleField(when) || !isValidRuleField(require)) {
-      throw new Error(
+      throw new DeskError(
         "When and Require must each be one line of up to 120 characters, without |."
       )
     }
@@ -31,21 +32,21 @@ export async function POST(request: Request, { params }: RouteParams) {
     const branch = agentBranchFor(sessionId)
     const { proposedRule } = await readAgentProposal(branch)
     if (!proposedRule) {
-      throw new Error("This agent branch has no proposed rule.")
+      throw new DeskError("This agent branch has no proposed rule.")
     }
 
-    const editedRuleLine = formatRuleLine({
+    const proposedLine = formatRuleLine(proposedRule)
+    const editedLine = formatRuleLine({
       ...proposedRule,
       when: when.trim(),
       require: require.trim(),
     })
-    const branchRulesFile = await readRepoFile("RULES.md", branch)
+    const branchRulebookLines = (await readRulebook(branch)).split("\n")
     await commitFile(
       "RULES.md",
-      branchRulesFile!.text.replace(
-        formatRuleLine(proposedRule),
-        () => editedRuleLine
-      ),
+      branchRulebookLines
+        .map((line) => (line === proposedLine ? editedLine : line))
+        .join("\n"),
       buildCommitMessage("desk", `edit rule ${proposedRule.id}`),
       branch
     )
@@ -55,6 +56,6 @@ export async function POST(request: Request, { params }: RouteParams) {
       buildCommitMessage("desk", `clear impact preview for ${proposedRule.id}`),
       branch
     )
-    return { rule: editedRuleLine }
+    return { rule: editedLine }
   })
 }

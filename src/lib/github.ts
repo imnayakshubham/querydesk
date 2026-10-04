@@ -1,9 +1,10 @@
 import { Octokit } from "@octokit/rest"
+import { DeskError } from "@/lib/desk-error"
 import {
   findRulebookChangeError,
-  isPathAgentMayChange,
   isClaimId,
-  parseRuleLine,
+  isPathAgentMayChange,
+  parseRulebook,
 } from "@/lib/rules"
 
 export type Claim = {
@@ -62,7 +63,7 @@ export async function readClaim(claimId: string) {
   const claimFile = isClaimId(claimId)
     ? await readRepoFile(`claims/${claimId}/claim.json`)
     : null
-  if (!claimFile) throw new Error(`Unknown claim ${claimId}.`)
+  if (!claimFile) throw new DeskError(`Unknown claim ${claimId}.`)
   return JSON.parse(claimFile.text) as Claim
 }
 
@@ -99,28 +100,59 @@ export async function listFilesChangedByAgent(branch: string) {
   return data.files ?? []
 }
 
-// What an agent branch proposes: the claim it worked on, and the rule it adds, if any.
-export async function readAgentProposal(branch: string) {
+export async function readRulebook(branch = "main") {
+  const rulebookFile = await readRepoFile("RULES.md", branch)
+  if (!rulebookFile) throw new Error(`RULES.md is missing on ${branch}.`)
+  return rulebookFile.text
+}
+
+async function listRuleIdsOnMain() {
+  return new Set(parseRulebook(await readRulebook()).map((rule) => rule.id))
+}
+
+// What an agent branch proposes: the claim it worked on, whether it drafts a
+// reply, and the rule it adds (the branch's rule whose ID main doesn't have).
+async function readProposalAgainstMain(
+  branch: string,
+  ruleIdsOnMain: Set<string>
+) {
   const changedFiles = await listFilesChangedByAgent(branch)
-  const rulesDiff = changedFiles.find(
-    (file) => file.filename === "RULES.md"
-  )?.patch
-  const addedRuleLine = rulesDiff
-    ?.split("\n")
-    .find((diffLine) => diffLine.startsWith("+- ["))
-  const claimId = changedFiles
-    .map((file) => file.filename.match(/^claims\/(CLM-\d{3})\//)?.[1])
+  const changedPaths = changedFiles.map((file) => file.filename)
+  const claimId = changedPaths
+    .map((path) => path.match(/^claims\/(CLM-\d{3})\//)?.[1])
     .find(Boolean)
+  const proposedRule = changedPaths.includes("RULES.md")
+    ? (parseRulebook(await readRulebook(branch)).find(
+        (rule) => !ruleIdsOnMain.has(rule.id)
+      ) ?? null)
+    : null
   return {
+    branch,
     changedFiles,
     claimId,
-    proposedRule: addedRuleLine ? parseRuleLine(addedRuleLine.slice(1)) : null,
+    draftsReply: changedPaths.includes(`claims/${claimId}/reply.json`),
+    proposedRule,
   }
 }
 
-export async function findRuleAwaitingReview() {
-  for (const branch of await listAgentBranches()) {
-    const { proposedRule } = await readAgentProposal(branch)
+export async function readAgentProposal(branch: string) {
+  return readProposalAgainstMain(branch, await listRuleIdsOnMain())
+}
+
+export async function listAgentProposals() {
+  const [branches, ruleIdsOnMain] = await Promise.all([
+    listAgentBranches(),
+    listRuleIdsOnMain(),
+  ])
+  return Promise.all(
+    branches.map((branch) => readProposalAgainstMain(branch, ruleIdsOnMain))
+  )
+}
+
+export function findRuleAwaitingReview(
+  proposals: Awaited<ReturnType<typeof listAgentProposals>>
+) {
+  for (const { branch, proposedRule } of proposals) {
     if (proposedRule) return { branch, proposedRule }
   }
   return null
@@ -169,24 +201,27 @@ export async function discardAgentBranch(branch: string) {
   await octokit.git.deleteRef({ owner, repo, ref: `heads/${branch}` })
 }
 
-export async function approveAgentBranch(branch: string, message: string) {
+// Merges an agent branch into main, only if it changed what the agent may change.
+export async function mergeAgentBranch(branch: string, message: string) {
   for (const file of await listFilesChangedByAgent(branch)) {
     for (const path of [file.filename, file.previous_filename]) {
       if (path && !isPathAgentMayChange(path)) {
-        throw new Error(`The agent changed ${path}, which it may not change.`)
+        throw new DeskError(
+          `The agent changed ${path}, which it may not change.`
+        )
       }
     }
   }
 
-  const [mainRulesFile, branchRulesFile] = await Promise.all([
-    readRepoFile("RULES.md"),
-    readRepoFile("RULES.md", branch),
+  const [mainRulebook, branchRulebook] = await Promise.all([
+    readRulebook(),
+    readRulebook(branch),
   ])
-  const rulesChangeProblem = findRulebookChangeError(
-    mainRulesFile!.text,
-    branchRulesFile!.text
+  const rulebookChangeError = findRulebookChangeError(
+    mainRulebook,
+    branchRulebook
   )
-  if (rulesChangeProblem) throw new Error(rulesChangeProblem)
+  if (rulebookChangeError) throw new DeskError(rulebookChangeError)
 
   try {
     await octokit.repos.merge({
@@ -198,7 +233,7 @@ export async function approveAgentBranch(branch: string, message: string) {
     })
   } catch (error) {
     if (httpStatusOf(error) === 409) {
-      throw new Error("This proposal is out of date. Run it again.")
+      throw new DeskError("This proposal is out of date. Run it again.")
     }
     throw error
   }

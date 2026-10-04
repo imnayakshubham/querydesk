@@ -1,15 +1,14 @@
 import {
   findRuleAwaitingReview,
-  listAgentBranches,
+  listAgentProposals,
   listClaimIds,
-  listFilesChangedByAgent,
   listRecentCommitsOnMain,
-  readAgentProposal,
   readClaim,
   readRepoFile,
+  readRulebook,
   type Claim,
 } from "@/lib/github"
-import { parseRuleLine, type Rule } from "@/lib/rules"
+import { parseRulebook, type Rule } from "@/lib/rules"
 
 export type Checklist = {
   items: { document: string; rule: string; present: boolean }[]
@@ -35,13 +34,15 @@ export type ImpactPreview = {
   reason: string
 }[]
 
-export type Actor = "agent" | "desk" | "system" | "dev"
+export type Actor = "agent" | "desk" | "system"
 export type ClaimStatus =
   | "Not checked"
   | "Documents missing"
   | "Ready to send"
   | "Query open"
   | "Reply waiting for review"
+
+type AgentProposals = Awaited<ReturnType<typeof listAgentProposals>>
 
 export const repoUrl = `https://github.com/${process.env.GITHUB_REPO}`
 
@@ -50,40 +51,33 @@ async function readRepoJson<T>(path: string, branch = "main") {
   return file ? (JSON.parse(file.text) as T) : null
 }
 
+async function lastCommitDateOnMain(path: string) {
+  const [latestCommit] = await listRecentCommitsOnMain(path)
+  return latestCommit?.date ?? null
+}
+
 // GitAgent's own commits ("gitagent: auto-commit", memory notes) carry no prefix of ours.
 export function actorOf(commitMessage: string): Actor {
   const prefix = commitMessage.split(":")[0]
-  return prefix === "desk" || prefix === "system" || prefix === "dev"
-    ? prefix
-    : "agent"
+  return prefix === "desk" || prefix === "system" ? prefix : "agent"
 }
 
 function claimStatusOf(
   checklist: Checklist | null,
-  insurerQuery: InsurerQuery | null,
-  approvedReply: Reply | null,
-  replyBranch: string | undefined
+  queryIsOpen: boolean,
+  hasDraftReply: boolean
 ): ClaimStatus {
-  if (replyBranch) return "Reply waiting for review"
-  if (insurerQuery && approvedReply?.query !== insurerQuery.query) {
-    return "Query open"
-  }
+  if (hasDraftReply) return "Reply waiting for review"
+  if (queryIsOpen) return "Query open"
   if (!checklist) return "Not checked"
   if (checklist.missing.length > 0) return "Documents missing"
   return "Ready to send"
 }
 
-// An agent branch that changes a claim's reply.json is a draft waiting for review.
-async function findReplyBranchesByClaimId() {
-  const replyBranchByClaimId = new Map<string, string>()
-  for (const branch of await listAgentBranches()) {
-    const { claimId, changedFiles } = await readAgentProposal(branch)
-    const changesReply = changedFiles.some(
-      (file) => file.filename === `claims/${claimId}/reply.json`
-    )
-    if (claimId && changesReply) replyBranchByClaimId.set(claimId, branch)
-  }
-  return replyBranchByClaimId
+function findReplyBranch(proposals: AgentProposals, claimId: string) {
+  return proposals.find(
+    (proposal) => proposal.claimId === claimId && proposal.draftsReply
+  )?.branch
 }
 
 // Git hides merge commits (approvals) from a path-filtered history, so the
@@ -99,18 +93,32 @@ async function historyOf(path: string, subject: RegExp) {
       ...recentCommits.filter((commit) => subject.test(commit.message)),
     ].map((commit) => [commit.sha, commit])
   )
+  // Commits from building the app (dev:) are not desk activity.
   return [...commitsBySha.values()]
+    .filter((commit) => !commit.message.startsWith("dev:"))
     .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
     .map((commit) => ({ ...commit, actor: actorOf(commit.message) }))
 }
 
-async function readClaimFiles(claimId: string) {
-  const [checklist, insurerQuery, approvedReply] = await Promise.all([
-    readRepoJson<Checklist>(`claims/${claimId}/checklist.json`),
-    readRepoJson<InsurerQuery>(`claims/${claimId}/query.json`),
-    readRepoJson<Reply>(`claims/${claimId}/reply.json`),
-  ])
-  return { checklist, insurerQuery, approvedReply }
+// A query is answered when a reply was committed to main after it arrived.
+export async function readClaimState(claimId: string) {
+  const [checklist, insurerQuery, approvedReply, queryDate, replyDate] =
+    await Promise.all([
+      readRepoJson<Checklist>(`claims/${claimId}/checklist.json`),
+      readRepoJson<InsurerQuery>(`claims/${claimId}/query.json`),
+      readRepoJson<Reply>(`claims/${claimId}/reply.json`),
+      lastCommitDateOnMain(`claims/${claimId}/query.json`),
+      lastCommitDateOnMain(`claims/${claimId}/reply.json`),
+    ])
+  const queryIsAnswered =
+    !!queryDate && !!replyDate && replyDate.localeCompare(queryDate) > 0
+  return {
+    checklist,
+    insurerQuery,
+    approvedReply,
+    openQuery: queryIsAnswered ? null : (insurerQuery?.query ?? null),
+    queryIsAnswered,
+  }
 }
 
 // The queue shows the desk's most urgent work first.
@@ -138,26 +146,25 @@ function nextStepFor(status: ClaimStatus, missingDocuments: string[]) {
 }
 
 export async function loadQueue() {
-  const [claimIds, replyBranchByClaimId] = await Promise.all([
+  const [claimIds, proposals] = await Promise.all([
     listClaimIds(),
-    findReplyBranchesByClaimId(),
+    listAgentProposals(),
   ])
   const queue = await Promise.all(
     claimIds.map(async (claimId) => {
-      const [claim, { checklist, insurerQuery, approvedReply }] =
-        await Promise.all([readClaim(claimId), readClaimFiles(claimId)])
+      const [claim, { checklist, openQuery }] = await Promise.all([
+        readClaim(claimId),
+        readClaimState(claimId),
+      ])
       const status = claimStatusOf(
         checklist,
-        insurerQuery,
-        approvedReply,
-        replyBranchByClaimId.get(claimId)
+        openQuery !== null,
+        !!findReplyBranch(proposals, claimId)
       )
-      const queryIsUnanswered =
-        !!insurerQuery && approvedReply?.query !== insurerQuery.query
       return {
         claim,
         status,
-        openQuery: queryIsUnanswered ? insurerQuery.query : null,
+        openQuery,
         nextStep: nextStepFor(status, checklist?.missing ?? []),
       }
     })
@@ -174,54 +181,57 @@ export async function loadQueue() {
 export async function loadClaim(claimId: string) {
   const claim = await readRepoJson<Claim>(`claims/${claimId}/claim.json`)
   if (!claim) return null
-  const [claimFiles, replyBranchByClaimId, ruleAwaitingReview, timeline] =
-    await Promise.all([
-      readClaimFiles(claimId),
-      findReplyBranchesByClaimId(),
-      findRuleAwaitingReview(),
-      historyOf(`claims/${claimId}`, new RegExp(`\\b${claimId}\\b`)),
-    ])
-  const replyBranch = replyBranchByClaimId.get(claimId)
+  const [claimState, proposals, timeline] = await Promise.all([
+    readClaimState(claimId),
+    listAgentProposals(),
+    historyOf(`claims/${claimId}`, new RegExp(`\\b${claimId}\\b`)),
+  ])
+  const replyBranch = findReplyBranch(proposals, claimId)
   const draftReply = replyBranch
     ? await readRepoJson<Reply>(`claims/${claimId}/reply.json`, replyBranch)
     : null
-  const replyAnswersCurrentQuery =
-    !!claimFiles.approvedReply &&
-    claimFiles.approvedReply.query === claimFiles.insurerQuery?.query
 
   return {
     claim,
-    ...claimFiles,
+    ...claimState,
     status: claimStatusOf(
-      claimFiles.checklist,
-      claimFiles.insurerQuery,
-      claimFiles.approvedReply,
-      replyBranch
+      claimState.checklist,
+      claimState.openQuery !== null,
+      !!replyBranch
     ),
     replyBranch,
     draftReply,
-    replyAnswersCurrentQuery,
-    ruleAwaitingReview,
+    ruleAwaitingReview: findRuleAwaitingReview(proposals),
     timeline,
   }
 }
 
+// Insurers in the order the rulebook lists them; rules for any insurer last.
+function groupRulesByInsurer(rules: Rule[]) {
+  const rulesByInsurer = Map.groupBy(rules, (rule) => rule.insurer)
+  const insurerGroups = [...rulesByInsurer]
+    .filter(([insurer]) => insurer !== "Any")
+    .map(([insurer, insurerRules]) => ({ title: insurer, rules: insurerRules }))
+  const rulesForAnyInsurer = rulesByInsurer.get("Any")
+  return rulesForAnyInsurer
+    ? [...insurerGroups, { title: "All insurers", rules: rulesForAnyInsurer }]
+    : insurerGroups
+}
+
 export async function loadRules() {
-  const [rulesFile, ruleAwaitingReview, history] = await Promise.all([
-    readRepoFile("RULES.md"),
-    findRuleAwaitingReview(),
+  const [rulebook, proposals, history] = await Promise.all([
+    readRulebook(),
+    listAgentProposals(),
     historyOf("RULES.md", /\brule R-\d{3}\b/),
   ])
-  const rules = rulesFile!.text
-    .split("\n")
-    .map(parseRuleLine)
-    .filter((rule): rule is Rule => rule !== null)
+  const ruleGroups = groupRulesByInsurer(parseRulebook(rulebook))
+  const ruleProposal = proposals.find((proposal) => proposal.proposedRule)
+  if (!ruleProposal?.proposedRule) {
+    return { ruleGroups, history, proposal: null }
+  }
 
-  if (!ruleAwaitingReview) return { rules, history, proposal: null }
-
-  const { branch, proposedRule } = ruleAwaitingReview
-  const [changedFiles, lesson, impactPreview] = await Promise.all([
-    listFilesChangedByAgent(branch),
+  const { branch, proposedRule, changedFiles } = ruleProposal
+  const [lesson, impactPreview] = await Promise.all([
     readRepoJson<Lesson>(`lessons/${proposedRule.id}.json`, branch),
     readRepoJson<ImpactPreview>(
       `lessons/${proposedRule.id}-impact.json`,
@@ -231,7 +241,7 @@ export async function loadRules() {
   const rulesDiff =
     changedFiles.find((file) => file.filename === "RULES.md")?.patch ?? ""
   return {
-    rules,
+    ruleGroups,
     history,
     proposal: { branch, proposedRule, rulesDiff, lesson, impactPreview },
   }

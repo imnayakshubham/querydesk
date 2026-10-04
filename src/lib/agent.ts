@@ -3,9 +3,12 @@ import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { initLocalSession, query } from "@open-gitagent/gitagent"
+import { DeskError } from "@/lib/desk-error"
 import { discardAgentBranch, listFilesChangedByAgent } from "@/lib/github"
 
 const githubToken = process.env.GITHUB_TOKEN!
+// GitAgent's SDK ignores max_turns in agent.yaml, so the limit is set here.
+const MAX_AGENT_TURNS = 8
 const MODEL_BUSY_OR_OUT_OF_QUOTA = /"code":\s*(429|503)/
 
 async function runAgentInClone(prompt: string, cloneDir: string) {
@@ -15,7 +18,7 @@ async function runAgentInClone(prompt: string, cloneDir: string) {
     prompt,
     dir: cloneDir,
     allowedTools: ["read", "write", "edit", "memory"],
-    maxTurns: 8,
+    maxTurns: MAX_AGENT_TURNS,
   })
   for await (const message of agentRun) {
     if (message.type === "system" && message.subtype === "error") {
@@ -55,7 +58,7 @@ export async function runAgentSkill(prompt: string, branchToResume?: string) {
       agentResult = await runAgentInClone(prompt, session.dir)
     }
     if (agentResult.modelError) {
-      throw new Error(describeModelError(agentResult.modelError))
+      throw new DeskError(describeModelError(agentResult.modelError))
     }
 
     session.finalize()
@@ -64,10 +67,13 @@ export async function runAgentSkill(prompt: string, branchToResume?: string) {
       (await listFilesChangedByAgent(session.branch)).length === 0
     if (agentChangedNothing) {
       await discardAgentBranch(session.branch)
-      throw new Error(agentResult.finalReply || "The agent made no changes.")
+      throw new DeskError(
+        agentResult.finalReply || "The agent made no changes."
+      )
     }
     return { branch: session.branch, agentReply: agentResult.finalReply }
   } catch (error) {
+    if (error instanceof DeskError) throw error
     // git errors echo the clone URL, which contains the token
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(message.replaceAll(githubToken, "[token]"))

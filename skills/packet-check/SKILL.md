@@ -18,22 +18,22 @@ description: Check one claim's documents against the insurer playbook before the
 
 ## Format
 
-Valid JSON only, no comments. One item per rule that applies, in rule order.
+Valid JSON only, no comments. One item per rule that applies, in rule order. The example below is fictional (a cataract claim with made-up rules), only to show the shape.
 
 ```json
 {
   "items": [
-    { "document": "itemised pharmacy bill", "rule": "R-001", "present": true },
-    { "document": "discharge summary signed by the treating doctor", "rule": "R-008", "present": true }
+    { "document": "biometry report", "rule": "R-041", "present": true },
+    { "document": "signed surgical consent form", "rule": "R-042", "present": false }
   ],
-  "missing": [],
-  "summary": "Everything the playbook asks for is here (R-001, R-008)."
+  "missing": ["signed surgical consent form"],
+  "summary": "The signed surgical consent form is missing (R-042)."
 }
 ```
 
 - `document` is the rule's `Require` text.
 - `missing` lists the `document` of every item with `present: false`, in the same order. Empty list when nothing is missing.
-- `summary` is one sentence for the desk. When something is missing, name the document and its rule, for example `The ICU justification note is missing (R-011).`
+- `summary` is one sentence for the desk. When something is missing, name the document and its rule, as in the example above. When nothing is missing, say everything the playbook asks for is present and list the rule IDs.
 
 ## Check before writing
 

@@ -3,9 +3,10 @@ name: querydesk
 version: 0.1.0
 description: Claims-desk assistant that checks cashless hospital claims against the insurer rulebook, drafts replies to insurer queries, and proposes new rules for the desk to approve.
 model:
-  preferred: "google:gemini-flash-latest"
+  preferred: "google:gemini-flash-lite-latest"
   fallback: []
 tools: [read, write, edit, memory]
 skills: [packet-check, query-reply, propose-lesson, impact-preview]
-runtime:
-  max_turns: 8
+# GitAgent requires a runtime block. The turn limit is set in src/lib/agent.ts,
+# because GitAgent's SDK does not read max_turns from here.
+runtime: {}

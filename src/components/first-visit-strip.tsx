@@ -5,24 +5,25 @@ import { useSyncExternalStore } from "react"
 import { Button } from "@/components/ui/button"
 
 const DISMISSED_KEY = "querydesk-intro-dismissed"
+const dismissalListeners = new Set<() => void>()
 
-function subscribeToStorage(onChange: () => void) {
-  window.addEventListener("storage", onChange)
-  return () => window.removeEventListener("storage", onChange)
+function subscribeToDismissal(onChange: () => void) {
+  dismissalListeners.add(onChange)
+  return () => dismissalListeners.delete(onChange)
+}
+
+function dismissIntro() {
+  localStorage.setItem(DISMISSED_KEY, "yes")
+  dismissalListeners.forEach((notify) => notify())
 }
 
 export function FirstVisitStrip() {
   const isDismissed = useSyncExternalStore(
-    subscribeToStorage,
+    subscribeToDismissal,
     () => localStorage.getItem(DISMISSED_KEY) === "yes",
     () => true
   )
   if (isDismissed) return null
-
-  function dismiss() {
-    localStorage.setItem(DISMISSED_KEY, "yes")
-    window.dispatchEvent(new StorageEvent("storage"))
-  }
 
   return (
     <div className="mb-8 flex items-start justify-between gap-6 rounded-lg border bg-primary/5 p-4">
@@ -49,7 +50,7 @@ export function FirstVisitStrip() {
           </li>
         </ol>
       </div>
-      <Button variant="outline" onClick={dismiss}>
+      <Button variant="outline" onClick={dismissIntro}>
         Got it
       </Button>
     </div>

@@ -1,3 +1,5 @@
+import { DeskError } from "./desk-error.ts"
+
 export type Rule = {
   id: string
   insurer: string
@@ -8,14 +10,22 @@ export type Rule = {
 
 const RULE_LINE_PATTERN =
   /^- \[(R-\d{3})\] Insurer: (.+?) \| When: (.+?) \| Require: (.+?) \| Source: (.+)$/
+const STARTING_RULEBOOK_SOURCE = "starting rulebook"
+const AGENT_BRANCH_PREFIX = "gitagent/session-"
 
 export const isClaimId = (id: string) => /^CLM-\d{3}$/.test(id)
 export const isSessionId = (id: string) => /^[0-9a-f]{8}$/.test(id)
 export const isRuleId = (id: string) => /^R-\d{3}$/.test(id)
 
 export function agentBranchFor(sessionId: string) {
-  if (!isSessionId(sessionId)) throw new Error(`Unknown session ${sessionId}.`)
-  return `gitagent/session-${sessionId}`
+  if (!isSessionId(sessionId)) {
+    throw new DeskError(`Unknown session ${sessionId}.`)
+  }
+  return `${AGENT_BRANCH_PREFIX}${sessionId}`
+}
+
+export function sessionIdOf(agentBranch: string) {
+  return agentBranch.slice(AGENT_BRANCH_PREFIX.length)
 }
 
 export function buildCommitMessage(
@@ -25,6 +35,10 @@ export function buildCommitMessage(
   return `${actor}: ${text}`
 }
 
+export function ruleApprovalMessage(ruleId: string) {
+  return buildCommitMessage("desk", `approve rule ${ruleId}`)
+}
+
 export function parseRuleLine(line: string): Rule | null {
   const match = line.match(RULE_LINE_PATTERN)
   if (!match) return null
@@ -32,8 +46,19 @@ export function parseRuleLine(line: string): Rule | null {
   return { id, insurer, when, require, source }
 }
 
+export function parseRulebook(rulebookText: string) {
+  return rulebookText
+    .split("\n")
+    .map(parseRuleLine)
+    .filter((rule): rule is Rule => rule !== null)
+}
+
 export function formatRuleLine(rule: Rule) {
   return `- [${rule.id}] Insurer: ${rule.insurer} | When: ${rule.when} | Require: ${rule.require} | Source: ${rule.source}`
+}
+
+export function isLearnedRule(rule: Rule) {
+  return rule.source !== STARTING_RULEBOOK_SOURCE
 }
 
 export function isPathAgentMayChange(path: string) {

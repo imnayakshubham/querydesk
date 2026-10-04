@@ -45,7 +45,6 @@ const actorTones: Record<Actor, Tone> = {
   agent: "accent",
   desk: "dark",
   system: "neutral",
-  dev: "neutral",
 }
 
 export function ActorBadge({ actor }: { actor: Actor }) {

@@ -5,11 +5,12 @@ import { CommitHistory } from "@/components/commit-history"
 import { RuleEditor } from "@/components/rule-editor"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { loadRules, repoUrl } from "@/lib/desk"
+import { isLearnedRule, sessionIdOf, type Rule } from "@/lib/rules"
 import { cn } from "@/lib/utils"
 
 export default async function RulesPage() {
   await connection()
-  const { rules, history, proposal } = await loadRules()
+  const { ruleGroups, history, proposal } = await loadRules()
 
   return (
     <>
@@ -41,37 +42,20 @@ export default async function RulesPage() {
             <CardHeader>
               <CardTitle>Current rules</CardTitle>
             </CardHeader>
-            <CardContent>
-              <ul className="flex flex-col gap-4">
-                {rules.map((rule) => {
-                  const isLearned = rule.source !== "starting rulebook"
-                  return (
-                    <li
-                      key={rule.id}
-                      className="flex items-start justify-between gap-4"
-                    >
-                      <div className="flex flex-col gap-0.5">
-                        <span>
-                          <span className="font-mono text-xs">{rule.id}</span>{" "}
-                          {rule.insurer} · {rule.when}
-                        </span>
-                        <span className="text-muted-foreground">
-                          Requires {rule.require} · from {rule.source}
-                        </span>
-                      </div>
-                      {isLearned && (
-                        <ActionButton
-                          endpoint={`/api/rules/${rule.id}/revert`}
-                          variant="destructive"
-                          label="Revert"
-                          workingLabel="Reverting…"
-                          successMessage="Reverted on main."
-                        />
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
+            <CardContent className="flex flex-col gap-6">
+              {ruleGroups.map((group) => (
+                <section key={group.title} className="flex flex-col gap-3">
+                  <h3 className="text-xs font-medium text-muted-foreground">
+                    {group.title} · {group.rules.length}{" "}
+                    {group.rules.length === 1 ? "rule" : "rules"}
+                  </h3>
+                  <ul className="flex flex-col gap-3">
+                    {group.rules.map((rule) => (
+                      <RuleRow key={rule.id} rule={rule} />
+                    ))}
+                  </ul>
+                </section>
+              ))}
             </CardContent>
           </Card>
 
@@ -92,11 +76,45 @@ export default async function RulesPage() {
   )
 }
 
+function RuleRow({ rule }: { rule: Rule }) {
+  const isLearned = isLearnedRule(rule)
+  return (
+    <li className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-1">
+        <span>
+          <span className="mr-2 font-mono text-xs text-muted-foreground">
+            {rule.id}
+          </span>
+          {capitalise(rule.when)} → {rule.require}
+        </span>
+        {isLearned && (
+          <span className="self-start rounded-md bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
+            Learned from {rule.source}
+          </span>
+        )}
+      </div>
+      {isLearned && (
+        <ActionButton
+          endpoint={`/api/rules/${rule.id}/revert`}
+          variant="destructive"
+          label="Revert"
+          workingLabel="Reverting…"
+          successMessage="Reverted on main."
+        />
+      )}
+    </li>
+  )
+}
+
+function capitalise(text: string) {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 type Proposal = NonNullable<Awaited<ReturnType<typeof loadRules>>["proposal"]>
 
 function ProposalReview({ proposal }: { proposal: Proposal }) {
   const { branch, proposedRule, rulesDiff, lesson, impactPreview } = proposal
-  const sessionId = branch.replace("gitagent/session-", "")
+  const sessionId = sessionIdOf(branch)
   const changedLines = rulesDiff
     .split("\n")
     .filter((diffLine) => diffLine.startsWith("+") || diffLine.startsWith("-"))
