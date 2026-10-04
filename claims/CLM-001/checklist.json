@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "document": "itemised pharmacy bill",
+      "rule": "R-001",
+      "present": true
+    },
+    {
+      "document": "discharge summary signed by the treating doctor",
+      "rule": "R-004",
+      "present": true
+    }
+  ],
+  "missing": [],
+  "summary": "Everything the playbook asks for is here (R-001, R-004)."
+}
