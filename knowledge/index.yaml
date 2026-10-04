@@ -1,0 +1,9 @@
+entries:
+  - path: insurers/suraksha-general.md
+    tags: [insurer]
+    priority: medium
+    always_load: false
+  - path: insurers/meridian-health-cover.md
+    tags: [insurer]
+    priority: medium
+    always_load: false

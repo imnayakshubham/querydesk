@@ -1,0 +1,18 @@
+{
+  "CLM-001": [
+    "The patient stayed in the ICU for 2 days. Please send a justification for the ICU admission.",
+    "Please confirm the lowest platelet count recorded during the stay."
+  ],
+  "CLM-002": [
+    "The patient stayed in the ICU for 3 days. Please send a justification for the ICU admission.",
+    "Please send the daily platelet count chart."
+  ],
+  "CLM-003": [
+    "Please send the histopathology report for the removed appendix.",
+    "Please explain the anaesthesia charges on the bill."
+  ],
+  "CLM-004": [
+    "Please send the implant sticker and invoice for the knee implant.",
+    "Please confirm the implant brand and model used."
+  ]
+}

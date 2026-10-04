@@ -1,0 +1,16 @@
+{
+  "id": "CLM-004",
+  "patient": "Sunita Rao",
+  "insurer": "Meridian Health Cover",
+  "diagnosis": "Osteoarthritis of the right knee",
+  "procedure": "Total knee replacement",
+  "admitted": "2026-09-29",
+  "discharged": "2026-10-04",
+  "icuDays": 0,
+  "documents": [
+    { "name": "Discharge summary signed by the treating doctor", "present": true },
+    { "name": "Itemised pharmacy bill", "present": true },
+    { "name": "Operation theatre notes", "present": true },
+    { "name": "Implant sticker and invoice", "present": false }
+  ]
+}

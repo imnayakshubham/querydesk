@@ -1,0 +1,11 @@
+spec_version: "0.1.0"
+name: querydesk
+version: 0.1.0
+description: Claims-desk assistant that checks cashless hospital claims against the insurer rulebook, drafts replies to insurer queries, and proposes new rules for the desk to approve.
+model:
+  preferred: "google:gemini-flash-latest"
+  fallback: []
+tools: [read, write, edit, memory]
+skills: [packet-check, query-reply, propose-lesson, impact-preview]
+runtime:
+  max_turns: 8

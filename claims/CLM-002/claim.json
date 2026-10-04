@@ -1,0 +1,15 @@
+{
+  "id": "CLM-002",
+  "patient": "Anita Deshmukh",
+  "insurer": "Suraksha General",
+  "diagnosis": "Dengue fever with low platelet count",
+  "procedure": null,
+  "admitted": "2026-09-30",
+  "discharged": "2026-10-05",
+  "icuDays": 3,
+  "documents": [
+    { "name": "Discharge summary signed by the treating doctor", "present": true },
+    { "name": "Itemised pharmacy bill", "present": true },
+    { "name": "Lab reports (NS1 antigen, platelet counts)", "present": true }
+  ]
+}
