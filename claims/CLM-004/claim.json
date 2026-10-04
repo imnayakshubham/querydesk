@@ -8,9 +8,33 @@
   "discharged": "2026-10-04",
   "icuDays": 0,
   "documents": [
-    { "name": "Discharge summary signed by the treating doctor", "present": true },
-    { "name": "Itemised pharmacy bill", "present": true },
-    { "name": "Operation theatre notes", "present": true },
-    { "name": "Implant sticker and invoice", "present": false }
+    {
+      "name": "Discharge summary signed by the treating doctor",
+      "present": true
+    },
+    {
+      "name": "Itemised pharmacy bill",
+      "present": true
+    },
+    {
+      "name": "Operation theatre notes",
+      "present": true
+    },
+    {
+      "name": "Implant sticker and invoice",
+      "present": false
+    },
+    {
+      "name": "Pre-authorisation approval letter",
+      "present": true
+    },
+    {
+      "name": "Copy of the policy card and patient photo ID",
+      "present": true
+    },
+    {
+      "name": "Pre- and post-operative X-ray reports",
+      "present": true
+    }
   ]
 }

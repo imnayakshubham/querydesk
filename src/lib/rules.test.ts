@@ -14,7 +14,7 @@ import {
 
 const startingRulesText = readFileSync("RULES.md", "utf8")
 const proposedRuleLine =
-  "- [R-005] Insurer: Suraksha General | When: dengue with ICU stay | Require: signed ICU justification note from the treating doctor | Source: CLM-001 query"
+  "- [R-011] Insurer: Suraksha General | When: dengue with ICU stay | Require: signed ICU justification note from the treating doctor | Source: CLM-001 query"
 const lastStartingRuleLine = startingRulesText
   .split("\n")
   .findLast((line) => parseRuleLine(line))!
@@ -31,8 +31,8 @@ function rulesWithAddedLine(newLine: string) {
 
 test("buildCommitMessage prefixes the actor", () => {
   assert.equal(
-    buildCommitMessage("desk", "approve rule R-005"),
-    "desk: approve rule R-005"
+    buildCommitMessage("desk", "approve rule R-011"),
+    "desk: approve rule R-011"
   )
   assert.equal(
     buildCommitMessage("system", "insurer query received for CLM-001"),
@@ -46,10 +46,21 @@ test("parseRuleLine reads every starting rule", () => {
     .map(parseRuleLine)
     .filter((rule) => rule !== null)
     .map((rule) => rule.id)
-  assert.deepEqual(startingRuleIds, ["R-001", "R-002", "R-003", "R-004"])
+  assert.deepEqual(startingRuleIds, [
+    "R-001",
+    "R-002",
+    "R-003",
+    "R-004",
+    "R-005",
+    "R-006",
+    "R-007",
+    "R-008",
+    "R-009",
+    "R-010",
+  ])
 
   assert.deepEqual(parseRuleLine(proposedRuleLine), {
-    id: "R-005",
+    id: "R-011",
     insurer: "Suraksha General",
     when: "dengue with ICU stay",
     require: "signed ICU justification note from the treating doctor",
@@ -63,7 +74,7 @@ test("parseRuleLine rejects lines not in the rule format", () => {
     null
   )
   assert.equal(
-    parseRuleLine("- [R-005] Insurer: Any | Require: y | Source: z"),
+    parseRuleLine("- [R-011] Insurer: Any | Require: y | Source: z"),
     null
   )
   assert.equal(parseRuleLine("Never contact an insurer."), null)
@@ -81,14 +92,14 @@ test("ID checks accept only the exact formats", () => {
   assert.equal(isClaimId("../CLM-001"), false)
   assert.equal(isSessionId("6b714f93"), true)
   assert.equal(isSessionId("6b714f93/../main"), false)
-  assert.equal(isRuleId("R-005"), true)
+  assert.equal(isRuleId("R-011"), true)
   assert.equal(isRuleId("R-5"), false)
 })
 
 test("isPathAgentMayChange allows only the agent's folders and RULES.md", () => {
   const allowedPaths = [
     "claims/CLM-001/checklist.json",
-    "lessons/R-005.json",
+    "lessons/R-011.json",
     "memory/MEMORY.md",
     "RULES.md",
   ]
@@ -131,11 +142,11 @@ test("findRulebookChangeError rejects anything else", () => {
     proposedRuleLine
   )
   const twoRulesAdded = rulesWithAddedLine(
-    `${proposedRuleLine}\n${proposedRuleLine.replace("R-005", "R-006")}`
+    `${proposedRuleLine}\n${proposedRuleLine.replace("R-011", "R-012")}`
   )
   const malformedRuleAdded = rulesWithAddedLine("- ICU notes are needed.")
   const reusedRuleIdAdded = rulesWithAddedLine(
-    proposedRuleLine.replace("R-005", "R-004")
+    proposedRuleLine.replace("R-011", "R-010")
   )
 
   const problemWith = (branchText: string) =>

@@ -113,26 +113,60 @@ async function readClaimFiles(claimId: string) {
   return { checklist, insurerQuery, approvedReply }
 }
 
+// The queue shows the desk's most urgent work first.
+const STATUSES_BY_URGENCY: ClaimStatus[] = [
+  "Reply waiting for review",
+  "Query open",
+  "Documents missing",
+  "Not checked",
+  "Ready to send",
+]
+
+function nextStepFor(status: ClaimStatus, missingDocuments: string[]) {
+  switch (status) {
+    case "Reply waiting for review":
+      return "Review the draft reply"
+    case "Query open":
+      return "Draft a reply"
+    case "Documents missing":
+      return `Collect: ${missingDocuments.join(", ")}`
+    case "Not checked":
+      return "Check the claim"
+    case "Ready to send":
+      return "Ready to send to the insurer"
+  }
+}
+
 export async function loadQueue() {
   const [claimIds, replyBranchByClaimId] = await Promise.all([
     listClaimIds(),
     findReplyBranchesByClaimId(),
   ])
-  return Promise.all(
+  const queue = await Promise.all(
     claimIds.map(async (claimId) => {
-      const [claim, claimFiles, queryCommits] = await Promise.all([
-        readClaim(claimId),
-        readClaimFiles(claimId),
-        listRecentCommitsOnMain(`claims/${claimId}/query.json`),
-      ])
+      const [claim, { checklist, insurerQuery, approvedReply }] =
+        await Promise.all([readClaim(claimId), readClaimFiles(claimId)])
       const status = claimStatusOf(
-        claimFiles.checklist,
-        claimFiles.insurerQuery,
-        claimFiles.approvedReply,
+        checklist,
+        insurerQuery,
+        approvedReply,
         replyBranchByClaimId.get(claimId)
       )
-      return { claim, status, queryCount: queryCommits.length }
+      const queryIsUnanswered =
+        !!insurerQuery && approvedReply?.query !== insurerQuery.query
+      return {
+        claim,
+        status,
+        openQuery: queryIsUnanswered ? insurerQuery.query : null,
+        nextStep: nextStepFor(status, checklist?.missing ?? []),
+      }
     })
+  )
+  return queue.sort(
+    (a, b) =>
+      STATUSES_BY_URGENCY.indexOf(a.status) -
+        STATUSES_BY_URGENCY.indexOf(b.status) ||
+      a.claim.id.localeCompare(b.claim.id)
   )
 }
 

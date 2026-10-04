@@ -6,7 +6,7 @@ description: Show which open claims a proposed playbook rule would flag, before 
 # Impact preview
 
 **Input:** the request names the claims to check, for example `CLM-002 and CLM-003`. The proposed rule is the last line of Section B in `RULES.md`.
-**Output:** `lessons/<rule>-impact.json`, for example `lessons/R-005-impact.json`. No other file changes.
+**Output:** `lessons/<rule>-impact.json`, for example `lessons/R-011-impact.json`. No other file changes.
 
 ## Steps
 

@@ -24,16 +24,16 @@ Valid JSON only, no comments. One item per rule that applies, in rule order.
 {
   "items": [
     { "document": "itemised pharmacy bill", "rule": "R-001", "present": true },
-    { "document": "discharge summary signed by the treating doctor", "rule": "R-004", "present": true }
+    { "document": "discharge summary signed by the treating doctor", "rule": "R-008", "present": true }
   ],
   "missing": [],
-  "summary": "Everything the playbook asks for is here (R-001, R-004)."
+  "summary": "Everything the playbook asks for is here (R-001, R-008)."
 }
 ```
 
 - `document` is the rule's `Require` text.
 - `missing` lists the `document` of every item with `present: false`, in the same order. Empty list when nothing is missing.
-- `summary` is one sentence for the desk. When something is missing, name the document and its rule, for example `The ICU justification note is missing (R-005).`
+- `summary` is one sentence for the desk. When something is missing, name the document and its rule, for example `The ICU justification note is missing (R-011).`
 
 ## Check before writing
 

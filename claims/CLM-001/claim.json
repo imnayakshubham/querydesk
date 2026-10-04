@@ -8,8 +8,25 @@
   "discharged": "2026-10-03",
   "icuDays": 2,
   "documents": [
-    { "name": "Discharge summary signed by the treating doctor", "present": true },
-    { "name": "Itemised pharmacy bill", "present": true },
-    { "name": "Lab reports (NS1 antigen, platelet counts)", "present": true }
+    {
+      "name": "Discharge summary signed by the treating doctor",
+      "present": true
+    },
+    {
+      "name": "Itemised pharmacy bill",
+      "present": true
+    },
+    {
+      "name": "Lab reports confirming dengue (NS1 antigen, platelet counts)",
+      "present": true
+    },
+    {
+      "name": "Pre-authorisation approval letter",
+      "present": true
+    },
+    {
+      "name": "Copy of the policy card and patient photo ID",
+      "present": true
+    }
   ]
 }

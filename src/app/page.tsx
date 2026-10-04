@@ -37,12 +37,13 @@ export default async function QueuePage() {
               <TableHead>Patient</TableHead>
               <TableHead>Insurer</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Insurer queries</TableHead>
-              <TableHead>Demo control</TableHead>
+              <TableHead>Open insurer query</TableHead>
+              <TableHead>Next step</TableHead>
+              <TableHead>Demo</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {queue.map(({ claim, status, queryCount }) => (
+            {queue.map(({ claim, status, openQuery, nextStep }) => (
               <TableRow key={claim.id}>
                 <TableCell>
                   <Link
@@ -57,7 +58,23 @@ export default async function QueuePage() {
                 <TableCell>
                   <StatusBadge status={status} />
                 </TableCell>
-                <TableCell>{queryCount}</TableCell>
+                <TableCell className="max-w-64 whitespace-normal">
+                  {openQuery ? (
+                    <span title={openQuery} className="line-clamp-2">
+                      {openQuery}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">None</span>
+                  )}
+                </TableCell>
+                <TableCell className="max-w-56 whitespace-normal">
+                  <Link
+                    href={`/claims/${claim.id}`}
+                    className="text-primary hover:underline"
+                  >
+                    {nextStep} →
+                  </Link>
+                </TableCell>
                 <TableCell>
                   <ActionButton
                     endpoint={`/api/claims/${claim.id}/query`}
